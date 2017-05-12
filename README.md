@@ -1,6 +1,6 @@
 # st_ca (Special Topics in Computer Architecture)
 
-Some stuff from projects I did a grad class called Special Topics in Computer Architecture.
+Some stuff from projects I did in a grad class called Special Topics in Computer Architecture.
 
 It's generally related to stuff around caches.
 
