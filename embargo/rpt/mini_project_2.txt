@@ -1,0 +1,366 @@
+###########
+# Problem 1
+
+Benchmarks:
+
+1) Dhrystone (12,500 loops)
+2) Linpack   (N = 70)
+
+I used Pin with pintool "pinatrace" to get the data address traces of
+these files.
+
+bash-3.2$ wc -l pinatrace_drystone.out
+ 4293849 pinatrace_drystone.out
+
+bash-3.2$ wc -l pinatrace_linpack.out
+ 3016436 pinatrace_linpack.out
+
+I wrote a Python script "interleave_addresses.py" that takes in
+these traces and creates a new trace where we interleave the 
+threads at 100k instruction graularity. I choose 100k instead of 200k
+to incur more cache misses in the simulator (below).
+If we run out of instructions for one trace, we continue until we reach the 
+end of the other.
+
+I didn't want to use Dinero, so I wrote my own cache simulator, also 
+in Python (I named it 'Embargo' because why not).
+
+All caches in the simulator are fully associative. The L1 replacement
+algorithm is LRU. For the first implementation, the L2 replacement algorithm
+is also LRU. The rest of the parameters are dumped at the beginning
+of simulation:
+
+================================
+$ Parameters:
+BLOCK_SIZE = 32
+CACHE_SIZE = 1024
+NUM_BLOCKS = 32
+ADDR_BITS  = 64
+OFFSET     = 5
+LLC_BLOCK_SIZE = 64
+LLC_CACHE_SIZE = 4096
+LLC_NUM_BLOCKS = 32
+LLC_OFFSET     = 5
+================================
+
+The following are the stats of the above implementation:
+
+====================================
+Dumping stats of instance l1Cache
+numAccess: 7310351
+numHit: 5892295
+numMiss: 1418056
+Hit Rate: 80.6020805294%
+====================================
+====================================
+Dumping stats of instance l2Cache
+numAccess: 1418056
+numHit: 526735
+numMiss: 891321
+Hit Rate: 37.1448659291%
+====================================
+
+I decided to try out an implementation mentioned in "TADIP, Jaleel et al.,
+PACT'08". Instead of using an MIP "MRU insertion policy", we'd instead
+use an LIP "LRU insertion policy" where, upon allocating a block,
+we mark it as least recently-used instead of most-recently used. The
+argument here is that the MIP policy isn't very good at holding
+on to blocks for multiple workloads -- as soon as a new workload
+comes in, you're going to probably start pushing out blocks
+from the other workload. Simulation results are below:
+
+====================================
+Dumping stats of instance l1Cache
+numAccess: 7310351
+numHit: 5892295
+numMiss: 1418056
+Hit Rate: 80.6020805294%
+====================================
+====================================
+Dumping stats of instance l2Cache
+numAccess: 1418056
+numHit: 23
+numMiss: 1418033
+Hit Rate: 0.00162193876688%
+====================================
+
+So that was abysmal. This may explain the motivation for the "Dynamic 
+Insertion Policy" as there will be apps that may not benefit from this
+kind of insertion poicy in the first place. It seems we may be settling
+pretty quickly into the working set of a given app. The LIP would
+be more useful if we saw something like smaller interleaving of traffic where
+we would otherwise be thrasing all the time.
+
+The other implementation I tried was one mentioned in "PIPP, Xie and Log, 
+ISCA'09): the PIPP or "promotion/insertion pseudo partitioning" policy.
+Rather then insert as most- or least-recetnyl used, try inserting at an
+"arbitrary position in the stack." This isn't exactly straightforward
+to model as the implementaion assumes some input from the OS about
+which app we're currently using. To model this, the simulator
+is given access to a "process ID" to know which app the addresses
+are associated with. If we see an instruction from a specified process 
+that is a miss, 50% of the time we'll allocate the block with an LRU
+value 50% of the max. Below are the results when we did this to the 
+Dhrystone app:
+
+====================================
+Dumping stats of instance l1Cache
+numAccess: 7310351
+numHit: 5892295
+numMiss: 1418056
+Hit Rate: 80.6020805294%
+====================================
+====================================
+Dumping stats of instance l2Cache
+numAccess: 1418056
+numHit: 552557
+numMiss: 865499
+Hit Rate: 38.9658095308%
+====================================
+
+Performance actually kind of went up (from 37.1% to 38.9% hit rate). Looks 
+like we as we started switching working sets, we were able to absord some
+of the volatiltiy happens, giving some priority to the Linpack app. This
+could probably be better if more time was spent exploring this space.
+
+The Python scripts can be found on the COE machines:
+
+/Users/Grad/dhullihen
+
+Or they can be provided on request.
+
+###########
+# Problem 2
+
+The bash script that was provided is basically grepping a few system
+variables to figure out the number of physical and logical cores available
+on the current machine. From this we can figure out whether hyperthreading
+is enabled on a machine.
+
+For example, when I ran the script on grams:
+
+This system has one physical CPU,
+and 8 logical CPUs.
+For every physical CPU there are 4 cores.
+The CPU is a Intel(R) Core(TM) i7-4770 CPU @ 3.40GHz with 8192 KB cache
+
+Each CPU has 4 cores, and there are 8 logical CPUs, so there is hyperthreading
+where each core looks like 2 logical CPUs.
+
+To track how the program scales, I used the pintool inscount2_mt. I also 
+tracked the time of execution. I tried 1, 4, 16 threads. The results below
+are from inscount2_mt:
+
+----------------------------------------
+Number of threads ever exist = 2
+Count[0]= 218529
+Count[1]= 5363
+----------------------------------------
+Number of threads ever exist = 5
+Count[0]= 224206
+Count[1]= 4314
+Count[2]= 1289
+Count[3]= 324
+Count[4]= 324
+----------------------------------------
+Number of threads ever exist = 17
+Count[0]= 245021
+Count[1]= 1281
+Count[2]= 3357
+Count[3]= 1289
+Count[4]= 296
+Count[5]= 324
+Count[6]= 296
+Count[7]= 296
+Count[8]= 296
+Count[9]= 296
+Count[10]= 296
+Count[11]= 296
+Count[12]= 296
+Count[13]= 296
+Count[14]= 296
+Count[15]= 296
+Count[16]= 296
+----------------------------------------
+
+What's interesting is you start to see diminishing returns as you add
+more threads. The 6th thread onward all have the same instruction counts
+when you run with 16 additional threads. When you run with 4 additional threads
+you can start to see the diminshing returns from the 3rd thread.
+
+When it came to comparing this with a non-hyperthreaded machine,
+I found that I only had access to AMD machines. The one Intel laptop
+I had did not have an option in its BIOS to turn off hyperthreading for
+some reason. Pin does apparently work on AMD machines, or at least appears
+to.
+
+At any rate, I ran the cores bash script on the AMD machine:
+
+-----------------------------------------------
+This system has one physical CPU,
+and 8 logical CPUs.
+For every physical CPU there are 8 cores.
+The CPU is a AMD FX(tm)-8310 Eight-Core Processor with 2048 KB cache
+-----------------------------------------------
+
+Which fits the bill of not having multiple logical cores per physical core.
+
+----------------------------------------
+Number of threads ever exist = 2
+Count[0]= 262838
+Count[1]= 5363
+----------------------------------------
+Number of threads ever exist = 5
+Count[0]= 265470
+Count[1]= 1347
+Count[2]= 5302
+Count[3]= 317
+Count[4]= 295
+----------------------------------------
+Number of threads ever exist = 17
+Count[0]= 276076
+Count[1]= 2589
+Count[2]= 3004
+Count[3]= 321
+Count[4]= 291
+Count[5]= 291
+Count[6]= 291
+Count[7]= 291
+Count[8]= 252
+Count[9]= 317
+Count[10]= 317
+Count[11]= 291
+Count[12]= 291
+Count[13]= 291
+Count[14]= 291
+Count[15]= 252
+Count[16]= 252
+----------------------------------------
+
+In this case there is a bit more variation between the instruction counts
+for each thread, but generally consistent from thread 4 and onward for
+the 16 additional thread case. 
+
+Granted, this isn't exactly a useful comparison without some idea of time.
+I ran the apps again with the 'time' command as well.
+
+For the hyperthreaded machine:
+
+# Thread | Real Time
+---------+----------
+       1 | 0m0.003s
+       4 | 0m0.004s
+      16 | 0m0.003s
+      64 | 0m0.005s
+     128 | 0m0.004s
+     256 | 0m0.006s
+     512 | 0m0.012s
+    1024 | 0m0.035s
+    2048 | 0m0.060s
+    4096 | 0m0.080s
+-------------------
+
+For the non-hyperthreaded machine:
+
+# Thread | Real Time
+---------+----------
+       1 | 0m0.010s
+       4 | 0m0.009s
+      16 | 0m0.003s
+      64 | 0m0.008s
+     128 | 0m0.006s
+     256 | 0m0.008s
+     512 | 0m0.010s
+    1024 | 0m0.019s
+    2048 | 0m0.037s
+    4096 | 0m0.070s
+-------------------
+
+It's worth noting that there were no other uses on the machines these
+were being run on. Nevertheless, raw time measurements are not always
+useful, plus we're comparing two different machines (ideally we'd just
+turn on/off hyperthreading). 
+
+Nevertheless, on the hyperthreaded machine, we see a sizable jump
+in execution time when going from 512 threads to 1024. We begin to
+see something similar in the non-hyperthreaded machine when going from
+1024 to 2048 threads, but we don't see a proportionate change. 
+
+What's interesting too is the AMD machine has 8 logical/8 cores, while the 
+Intel machine has 8 logical/4 cores. A better comparison would be 
+if the AMD machine was 4 logical/4 cores, as the scaling behavior could
+be effected by having more cores.
+
+Given all this, it would appear (and without much confidence in the data), that
+hyperthreading does not scale as well as you keep adding threads. 
+Theoretically this may make sense, given you are going to have a greater 
+contention of resources in a given core if it's split into two logical cores.
+Some threads may make better utilization of the core, but if you 
+have a core that has a "big" thread with a "small" thread, the "big" thread's
+performance may suffer.
+
+###########
+# Problem 3
+
+For this program, I went into the multiply-and-accumulate (MACC) loop and
+split the work among N threads. All of the matrixes were made global, 
+and a "result" variable was added with a mutex lock that all the 
+thread would right accumulate into. The expectation here was that each
+thread would accumulate a subset of the matrix A and B. When all threads
+would complete, the final value will be the same as if it were all done 
+serially.
+
+The program is attached at the end of this file.
+
+Compiling with -msse switch, I was able to get some SIMD acceleration. Here
+is a snippet from the assembly file:
+
+---------------------------------------------
+        leaq    (%rdx,%rax), %rax
+        movsd   b(,%rax,8), %xmm0
+        mulsd   %xmm1, %xmm0
+        movsd   -24(%rbp), %xmm1
+        addsd   %xmm1, %xmm0
+        movsd   %xmm0, -24(%rbp)
+        addl    $1, -28(%rbp)
+---------------------------------------------
+
+However, this ended up being incredibly slower (on the order of 10x) to 
+execute compared to the original kernal that was provided. This was seen
+even when running with just a single thread, which removes suspicion around
+possible contention in the cache caused by having multiple threads. There
+appears to be some overhead in creating/managing/retiring the threads, which
+when done very frequently, may have a compounding effect on execution time.
+
+I tried running with a single thread and removing the mutext lock
+to rule out overhead in handling the mutex. Execution time did not
+change significantly.
+
+###########
+# Problem 4
+
+http://www.makelinux.net/books/lkd2/ch03lev1sec3
+
+At the basic level, Linux originally handles threads differently from 
+other OSes. The Linux kernel does not necessarily know about threads; rather,
+it just sees processes that may share memory. Contrast this to other OSes
+where you can have a process that refers to multiple threads. 
+
+This is what the kernel sees, though. To the user, you still see processes.
+
+When it comes to pthreads, there is apparently a Linux implementation and
+then POSIX. POSIX requires threads to have some attributes associated with 
+them, such as the process and parent ID. 
+
+The "LinuxThreads" implementation originally had threads that do not
+share process IDs. It also used a "manager" thread that handled creation
+and termination of other threads. 
+
+The POSIX implementation removes the idea of a "manager thread" and instead
+threads are placed inside a thread group that has a common process ID.
+
+Between all this, you can use the sys call clone, fork or pthread_create().
+Each works at a different level when it comes to creating a thread. 
+At the core, clone() is used everywhere, but you can regulate the amount
+of sharing between threads (i.e. virtual memory, indicating a parent).
+

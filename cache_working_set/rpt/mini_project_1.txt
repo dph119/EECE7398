@@ -1,0 +1,334 @@
+###########
+# Problem 1
+
+Select any benchmark to characterize, the more interesting, the better. Given
+the high-level language code, provide a guess as to the static and dynamic
+instruction mix for this program. Then utilizing Pin or a similar profiling 
+tool, generate the instruction mix. Comment on the differences you see
+in the instruction mix and your guess.
+
+---
+
+The benchmark I chose was Coremark. It was introduced in 2009.
+
+http://www.eembc.org/coremark/index.php
+
+Coremark is a synthetic benchmark designed for embedded systems with a 
+focus on measuring the performance of the CPU pipeline. They don't claim 
+to to an end-all-be-all benchmark (they refer to industry standard suites
+to complement this when it comes to getting a complete picture).
+
+The benchmark coveres the following tasks:
+
+1) Manipulating lists
+2) Manipulating matrixes
+3) "State machine operation" i.e. tesing branch prediction
+4) CRC (cycling redundancy check) 
+
+The benchmark runs a fixed number of iterations over these tasks, which
+can be adjusted (similar to Dhrystone).
+
+core_bench_list 
+    This function tries to find "multiple data items," sort them, 
+    calculate CRC on the data, and do some insertion/removal.
+    For the CRC computation, crc16() is called. 
+    
+    So this function involves list traversal, which will involve
+    fetching from memory until we find the item, plus the occasional
+    ALU op to check if the item in question is indeed the one we're
+    looking for. Plus an ALU op to calculate the next index.
+    The list is a linked list.
+    Ballpark 45%/45%/10% memory/ALU/branch control? 
+
+    Then we do a mergesort ("sort the list in place without recursion").
+    Lots of compares, then merging the lists (moving, calculating indices).
+    We're ultimately updating pointers. 
+    35/50/15 memory/ALU/branch? I think more ALU because we're doing a lot
+    of comparisons, and updating pointers and indices as we do the merge.
+
+    Then there is the CRC calculation. This looks like mostly ALU ops 
+    (i.e. take a value, crunch it, spit out another value). It's
+    in a for-loop, so there is some control. 15/75/10 memory/ALU/branch?
+
+The CRC function is relatively short compare to everything else.
+It seems ultimately ALU-heavy. Each iteration calls the above function
+twice and the CRC function separately twice, adding a bit more ALU-heavy
+work. Given that I'll estimate the breakdown to be something like
+35/55/10 for memory/ALU/control operations. That would be dynamic.
+For static, given the large amount of looping, there would be less
+control logic so I would think something elike 35/60/5.
+
+To figure out the breakdown, I used the catmix.cpp Pin tool. For static
+count, the top categories were:
+
+1) DATAXFER             120700 
+2) BINARY                45346
+3) COND_BR               37850
+4) LOGICAL               33000
+5) UNCOND_BR             16295 
+
+DATAXFER covers all the variants of mov. BINARY covers things like 
+compares, general ALU ops (e.g. mult, div). COND_BR covers conditional
+jump instructions. LOGICAL covers logical ALU ops (e.g.
+NOT, OR, AND). UNCOND_BR covers simple jumps.
+
+Based on this, the breakdown of static instruction types is
+120700/45346+33000/37850+16295 = 120700/78346/54145 or
+47%/31%/22% for memory/ALU/control.
+
+Looking at the dynamic distribution:
+
+1) DATAXFER        12594511625 
+2) BINARY           9944680590 
+3) COND_BR          7519625243
+4) LOGICAL          5705793392
+5) SHIFT            1961880179
+
+What's interesting is that SHIFT is now a significant portion. 
+For the static mix, SHIFT was only 3884 (much less when you compare
+to the top list previously), suggesting a hot spot. For reference
+SHIFT covers instructions like SAR and SHL. Looks like this is in
+the CRC function.
+
+Based on this, the breakdown of instruction types is 
+12594511625/9944680590+5705793392+1961880179/7519625243 or
+12594511625/17612354161/7519625243 or
+33%/46%/21% for memory/ALU/control. 
+
+To summarize: 
+Predicted (Static) : 35%/60%/5%
+Actual (Static)    : 47%/31%/22%
+Predicted (Dynamic): 35%/55%/10%
+Actual (Dynamic)   : 33%/46%/21%
+
+I was pretty off when it comes to the static instruction mix,
+really underestimating the amount of control/branching instructions
+would come up. I was more on point fot the dynamic mix, but still
+underestimating branching instructions. 
+
+Caveat: Yeah, I only looked at the top n instruction categories,
+but I figure we get most of the picture that way as the totals for
+subsequent categories get progressively smaller.
+
+###########
+# Problem 2
+
+Utilizing a Unix utility program of your choice, generate an instruction
+address trace of the utility using Pin or a similar profiling tool. Using
+the address trace generated, generate a plot of the working set for 
+the execution. The plot should show the number of unique address block 
+accessed for each time window. Consider different window sizes. Use both 
+16B and 4KB memory block sizes to show the growth of the working set over 
+time. Be careful not to fill the disk on your system.
+
+---
+
+I decided to look at cp (copy). I created a file of (psuedo) random data:
+
+cat /dev/urandom | head -c 50000 > file_a.txt
+
+Then I collected the address trace using the pinatrace pintool:
+
+pin -t pinatrace.so -- cp file_a.txt file_b.txt
+
+Snippet of the log:
+
+0x3874400b03: W     0x7ffc4a3673f8  8       0x3874400b08
+0x3874401130: W     0x7ffc4a3673f0  8                  0
+0x3874401134: W     0x7ffc4a3673e8  8                  0
+0x3874401136: W     0x7ffc4a3673e0  8                  0
+
+I'm interpreting this as
+<instruction address>: <access type>  <address accessed> <size of access>
+
+Only have instructions, so need to decide on a time-window. Total
+instructions in my trace is 150,841. I tried a few windows (below).
+
+I did this with a Python script.
+
+The general algorithm is to first compile a list of all data addresses that 
+were accessed. Then divide them up into slices (the size of them
+is paramaterizable, e.g. 1000). This is effectively the time window size.
+Then for each slice, get the minimum address. I use a dictionary where 
+the key is a calculated index (i.e. block) and value is the number of times 
+that index has been accessed. The minimum value is subtracted from each 
+address to get an "offset", which is then divided by the block size to 
+quantize the offset into a particular block. 
+This final "block index" is used as the key in the dictionary. Thus,
+the number of unique keys is the number of unique blocks that were
+accessed. This also has the side effect of collecting just how often
+each block was accessed, too.
+
+I experimented with 3 window sizes: 100, 1,000, and 10,000 instructions.
+I think the 100 instruction window size was most interesting of the 3.
+There is more noise, but you can more easily see phases of execution
+even between both block sizes.
+
+###########
+# Problem 3
+
+On Blackboard you are provided both a serial and a pthreads version
+of a program that computes Pi by throwing darts at a dartboard. Utilizing
+these two programs, consider the differences in their performance, and their
+workload mix. Come up with at least two different metrics to compare
+these implementations of the same application.
+
+---
+
+One of the things you have to keep in mind about multi-threaded applications
+is the threads can interact with each other and impact performance. It no
+longer is so simple as just measuring the IPC of the program, as
+some threads may spend instructions waiting for other threads at, say,
+a barrier point. You need to be able to consider the IPC of the individual
+threads when they are actually "working." 
+
+There is a pin tool "inscount2_mt" written to collect instruction counts
+for each thread. It assumes each thread works on a basic block. Whenever
+we enter a basic block, we look up the ID of the thread and add the 
+instructions in the block to the running total for the thread. This works
+better than looking at the straight total instruction count like you would
+for a non-multi-threaded workload, but you don't necessarily know
+when threads started or stopped. 
+
+When using this tool on the multi-threaded version of the app, the tool
+reported that 33 threads existed over the course of execation. Most all
+of the threads had an instruction count in the ballpark of 59,157,378 except
+for the first thread, which had a count of 304411. 
+
+For comparison, the instruction count for the serial app is 409,606,339.
+Looking at the C code for the multi-threaded version, it appears all
+the threads are created up front. So the first thread we saw with the 
+relatively lower instruction count was probably the thread used to spawn
+off all the other threads that actually did calculations. In that case it would
+seem to suggest, at face value, that performance of the multi-threaded
+application is 400 / 60 = ~6.6x faster compared to the serial version. But
+for 32 threads compared to 1? We're also just looking at raw instruction
+count. If you wanted something like IPC we would need to consider the overhead
+of the threads possibly waiting for each other and the overhead of creating
+and managing the threads themselves.
+
+We could try taking a look at the breakdown of instruction types between
+the two applications (e.g. the ratios of the different types of instructions).
+
+I tried the catmix pin tool on both apps. Top categories for the serial app:
+
+1) DATAXFER             131428
+2) BINARY                46178 
+3) LOGICAL               33275 
+4) SSE                   19623 
+5) UNCOND_BR             17170 
+
+Compare to the multi-threaded app:
+
+1) DATAXFER             139286 
+2) BINARY                49002
+3) LOGICAL               37074 
+4) SSE                   19948
+5) UNCOND_BR             18634
+
+Okay, that wasn't very useful. The muli-threaded app generally has
+more instructions for each category. It is useful in the sense that it shows
+how, despite each thread running fewer total instructions compared to the 
+single-threaded app, the total breakdown of instructions and the counts
+of each category are not significantly different, suggesting some 
+amount of parallelism was achieved (as expected).
+
+There is also the malloctrace tool. Given the multiple threads use
+malloc to consolidate their data into the final result, maybe we could
+look at the amount of memory used per thread and total for the serial vs
+multi-threaded app.
+
+The report from the tool gives has the following format:
+
+...
+malloc(0x589)
+malloc(0x489)
+...
+
+Looks like each call and the requested size. For the serial app, there
+are fewer, larger malloc calls (22 total calls, for a total amount of 9,100 
+bytes). Compare to the multi-threaded app where there were 63 calls for
+a total amount of 11,324 bytes. So there was an additional ~24% overhead in
+memory used via malloc for the multi-threaded app. But if you look at the 
+memory consumed per thread on average, the multi-threaded app would be
+11,324 / 32 = 353 bytes. 
+
+It doesn't feel like a solid answer, but based on the exploring I've done
+here I would suggest, in the naive case of comparing these two apps, 1)
+the instruction count per thread assuming all threads are run together and 2)
+the total memory used by each app. I don't want to factor in run-time to derive
+IPC because of the reasons I mentioned above (e.g. thread synchronization).
+Comparing the instruction mix did not seem very useful.
+
+
+###########
+# Problem 4
+
+Read the paper on last-level cache design by Jaleel et al. Write a one-page
+review describing how the workload characteristics of bioinformatics
+workloads can benefit from a properly designed last-level cache. Also discuss
+in your review what tools the authos used to evaluate this workload.
+
+---
+
+Bioinformatics workloads can have a significant amount of data sharing inside
+the LLC compared to other workloads. We may not be exploting the larger
+granularity locality in current cache organizations. This manifests in
+higher miss rates on the LLC, reducing performance as we spend more time
+servicing requests to main memory.
+
+Depending on the workload, it's possible to add or expand the LLC to better
+accomodate these larger working sets in order to reduce the miss-rate. It
+ultimately comes down to the app, though. Are some threads reading other cache 
+lines used by others? Are they communicating with each other? If you look at 
+how much shared data there is in the LLC, GeneNet shares just about 4 MB of 
+data. So it becomes a question of balancing cache size with utilization, as 
+you will get diminishing returns from just constantly increasing the size of 
+the LLC. 
+
+There is also the question of whether the LLC should be shared or private.
+This paper does show some use-cases for having a shared LLC to enable 
+threads to share data and not deal with the overhead of multiple threads
+each working in a private LLC, requesting the same data, and all missing. There
+may be some sharing of data between threads, but each thread has its own set
+of private data that is it working on. If you keep adding threads, you may only
+increase contention in the LLC, reducing performance. Thus you have to 
+consider the number of threads (or cores) working in the LLC and the amount
+over overlap of data being used between those cores to justify a shared LLC. 
+
+This paper gives a good initial investigation into the variables you need
+to consider when designing an LLC for these kinds of workloads. It does 
+leave a lot of open questions, There is no mention of cache management 
+policies, for example. They also work with a fixed L1 and L2 configuration, 
+but maybe there is something about the relationship between the L2 and LLC 
+that can have a greater impact on performance. 
+The L3 itself was only modified by changing the size. What about
+banking the caches or exploring set associativity? Also, just what is the
+cost of a miss on the LLC anyway? We see a significant improvement when
+increasing the size of the LLC when it comes to the miss-rate, but how
+much does that really matter (yes it's understood that this is a cost in terms
+of cycles spent servicing the miss in memory).
+
+The tools that were used to evlauate this workload were interesting, though it 
+seemed odd to only use Pentium 4 when the paper was released in 2006. Not
+to mention the fact that they used icc for compilation, which is a compiler
+developed by Intel. Maybe this approach is acceptable for high performance 
+applications, but it will nevertheless give a somewhat favorable bias toward 
+Intel processors and may not translate into code that is more generally 
+representative. Nevertheless, using Pin proved to be helpful in analyzing
+the actual instructions being created by the apps, allowing the data
+to be re-used for other experiments. Ultimately they are limited by the 
+accuracy of the cache model that they developed (SimCMPcache).  
+
+There also seemed to be a significant amount of variation between the 
+applications. While the authors claim there are significant benefits from
+increasing the size of a shared LLC, I think it is a bit more modest than that
+depending on the workload. For example, the authors also point out that
+"GeneNet and SNP show no significant improvements in cache performance
+with larger private (or shared) caches, most likely due to little data reuse
+and frequent misses in the [LLC]..." So 2 out of the 5 apps saw no benefit?
+There is definitely some benefit, but it's not all encompassing for all apps
+and workloads. It would be interesting to see this analysis done with more apps
+as there seemed to be significant variation within the 5 apps that makes me
+wonder just how representative they really are. 
+

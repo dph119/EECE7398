@@ -1,0 +1,68 @@
+#
+# static counts
+#
+#num category   count-unpredicated count-predicated count-predicated-true
+#
+  3 AVX                      36           0           0
+  7 BINARY                46178           0           0
+  8 BITBYTE                1003           0           0
+ 12 CALL                  12707           0           0
+ 14 CMOV                      0        1182           0
+ 15 COND_BR               40849           0           0
+ 16 CONVERT                 750           0           0
+ 17 DATAXFER             131428           0           0
+ 19 FCMOV                     0          23           0
+ 20 FLAGOP                    8           0           0
+ 22 INTERRUPT                 7           0           0
+ 24 IOSTRINGOP                2           0           0
+ 25 LOGICAL               33275           0           0
+ 26 LOGICAL_FP             1272           0           0
+ 28 MISC                  16584           0           0
+ 29 MMX                      14           0           0
+ 31 NOP                    1938           0           0
+ 33 POP                    5012           0           0
+ 34 PREFETCH                 24           0           0
+ 35 PUSH                   3735           0           0
+ 39 RET                    4367           0           0
+ 40 ROTATE                  350           0           0
+ 42 SEMAPHORE               594           0           0
+ 45 SHIFT                  4424           0           0
+ 47 SSE                   19623           0           0
+ 48 STRINGOP                 40         500           0
+ 50 SYSCALL                 480           0           0
+ 52 SYSTEM                   46           0           0
+ 54 UNCOND_BR             17170           0           0
+ 55 VFMA                      2           0           0
+ 57 WIDENOP                8701           0           0
+ 58 X87_ALU                5871           0           0
+ 60 XSAVE                     2           0           0
+
+#
+# dynamic counts
+#
+#num category   count-unpredicated count-predicated count-predicated-true
+#
+  7 BINARY            449057826           0           0
+  8 BITBYTE                 612           0           0
+ 12 CALL              165001628           0           0
+ 14 CMOV                      0    29032887           0
+ 15 COND_BR           315021599           0           0
+ 16 CONVERT            60000004           0           0
+ 17 DATAXFER          966373478           0           0
+ 25 LOGICAL           210019353           0           0
+ 28 MISC              120005742           0           0
+ 29 MMX                       3           0           0
+ 31 NOP                      11           0           0
+ 33 POP                    1723           0           0
+ 35 PUSH               30001884           0           0
+ 39 RET               165001625           0           0
+ 40 ROTATE                   19           0           0
+ 42 SEMAPHORE          30000004           0           0
+ 45 SHIFT              45005398           0           0
+ 47 SSE               146783154           0           0
+ 48 STRINGOP                  0         432           0
+ 50 SYSCALL                  34           0           0
+ 52 SYSTEM                   20           0           0
+ 54 UNCOND_BR          45002407           0           0
+ 57 WIDENOP                 431           0           0
+# eof

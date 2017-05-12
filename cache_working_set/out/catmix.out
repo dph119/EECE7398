@@ -1,0 +1,67 @@
+#
+# static counts
+#
+#num category   count-unpredicated count-predicated count-predicated-true
+#
+  3 AVX                      36           0           0
+  7 BINARY                45346           0           0
+  8 BITBYTE                 955           0           0
+ 12 CALL                  11703           0           0
+ 14 CMOV                      0        1156           0
+ 15 COND_BR               37850           0           0
+ 16 CONVERT                 446           0           0
+ 17 DATAXFER             120700           0           0
+ 19 FCMOV                     0           2           0
+ 20 FLAGOP                    8           0           0
+ 22 INTERRUPT                 7           0           0
+ 24 IOSTRINGOP                2           0           0
+ 25 LOGICAL               33000           0           0
+ 26 LOGICAL_FP               42           0           0
+ 28 MISC                  15699           0           0
+ 29 MMX                      14           0           0
+ 31 NOP                    1823           0           0
+ 33 POP                    4831           0           0
+ 34 PREFETCH                 24           0           0
+ 35 PUSH                   3903           0           0
+ 39 RET                    3935           0           0
+ 40 ROTATE                  363           0           0
+ 42 SEMAPHORE               751           0           0
+ 45 SHIFT                  3884           0           0
+ 47 SSE                    5428           0           0
+ 48 STRINGOP                 40         504           0
+ 50 SYSCALL                 713           0           0
+ 52 SYSTEM                   56           0           0
+ 54 UNCOND_BR             16295           0           0
+ 57 WIDENOP                7576           0           0
+ 58 X87_ALU                 294           0           0
+ 60 XSAVE                     2           0           0
+
+#
+# dynamic counts
+#
+#num category   count-unpredicated count-predicated count-predicated-true
+#
+  7 BINARY           9944680590           0           0
+  8 BITBYTE            76542292           0           0
+ 12 CALL              252907803           0           0
+ 14 CMOV                      0      485059           0
+ 15 COND_BR          7519625243           0           0
+ 16 CONVERT            13450456           0           0
+ 17 DATAXFER        12594511625           0           0
+ 25 LOGICAL          5705793392           0           0
+ 28 MISC              931349869           0           0
+ 29 MMX                      39           0           0
+ 31 NOP                 4844481           0           0
+ 33 POP               162247739           0           0
+ 35 PUSH              162247993           0           0
+ 39 RET               252907800           0           0
+ 40 ROTATE                  125           0           0
+ 42 SEMAPHORE                27           0           0
+ 45 SHIFT            1961880179           0           0
+ 47 SSE                     489           0           0
+ 48 STRINGOP                  0         656           0
+ 50 SYSCALL                  69           0           0
+ 52 SYSTEM                   29           0           0
+ 54 UNCOND_BR         373939562           0           0
+ 57 WIDENOP            79570111           0           0
+# eof
